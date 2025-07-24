@@ -30,7 +30,7 @@ The car in depth
 
 <!-- column: 1 -->
 <!-- new_lines: 5 -->
-## 🧠 The body
+## 🚗 The body
 - (https://www.keyestudio.com/products/keyestudio-micro-bit-4wd-mecanum-robot-car-v20-diy-smart-kit-with-microbit-board)
 
 <!-- end_slide -->
@@ -43,7 +43,7 @@ Ok, I'm in. But how?
 ### Hacking through the kids documentation
 - Car Documentation and kids tutorial:(https://docs.keyestudio.com/projects/KS4034/en/latest/docs/index.html#product-introduction)
 - Microbit schematics:(https://tech.microbit.org/hardware/schematic/)
-### Rust and embassy
+### 🦀 Rust and embassy
 - Embassy:(https://embassy.dev/)
 - Examples(the important bit): (https://github.com/embassy-rs/embassy/tree/main/examples/nrf52840)
 ### 🤖 AI
@@ -52,7 +52,7 @@ Ok, I'm in. But how?
 <!-- end_slide -->
 
 <!-- new_lines: 5 -->
-Finally. The code!
+Finally. The code!🎉
 ===
 
 <!-- new_lines: 5 -->
@@ -81,7 +81,7 @@ But you haven't finished!? What’s Next?
 <!-- end_slide -->
 
 <!-- new_lines: 5 -->
-Thank you!
+🏁Thank you!
 ===
 
 <!-- new_lines: 5 -->
