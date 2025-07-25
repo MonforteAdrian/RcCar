@@ -8,6 +8,7 @@ use crate::{
 };
 use defmt::debug;
 use embassy_nrf::{
+    Peri,
     gpio::{Input, Pull},
     peripherals::{P0_01, P0_02, P0_11, P0_26, P1_00, PWM0, PWM1, TWISPI0},
     pwm::{
@@ -17,6 +18,7 @@ use embassy_nrf::{
     twim::Twim,
 };
 use embassy_time::{Duration, Instant, Timer};
+use static_cell::ConstStaticCell;
 
 // Low-level constants for WS2812B LED control
 const T1H: u16 = 0x8000 | 13; // Duty = 13/20 ticks (0.8us/1.25us) for a 1
@@ -31,9 +33,22 @@ const SAMPLE_INTERVAL_US: u64 = 15;
 
 // This allows the under-leds and the motors to work
 #[embassy_executor::task]
-pub async fn twin_task(p_twin: TWISPI0, p_i2c_ext_sda: P1_00, p_i2c_ext_scl: P0_26) {
+pub async fn twin_task(
+    p_twin: Peri<'static, TWISPI0>,
+    p_i2c_ext_sda: Peri<'static, P1_00>,
+    p_i2c_ext_scl: Peri<'static, P0_26>,
+) {
     let config = embassy_nrf::twim::Config::default();
-    let mut twi = Twim::new(p_twin, Irqs, p_i2c_ext_sda, p_i2c_ext_scl, config);
+
+    static RAM_BUFFER: ConstStaticCell<[u8; 16]> = ConstStaticCell::new([0; 16]);
+    let mut twi = Twim::new(
+        p_twin,
+        Irqs,
+        p_i2c_ext_sda,
+        p_i2c_ext_scl,
+        config,
+        RAM_BUFFER.take(),
+    );
 
     loop {
         let command = TWIN_CHANNEL.receive().await;
@@ -60,7 +75,7 @@ pub async fn big_leds() {
 }
 
 #[embassy_executor::task]
-pub async fn bottom_leds(p_pwm: PWM0, p: P0_11) {
+pub async fn bottom_leds(p_pwm: Peri<'static, PWM0>, p: Peri<'static, P0_11>) {
     debug!("Bottom LEDs initialized");
     // Use the smart-leds crate to better integration
     let mut config = embassy_nrf::pwm::Config::default();
@@ -69,9 +84,9 @@ pub async fn bottom_leds(p_pwm: PWM0, p: P0_11) {
     config.max_duty = 20; // 1.25us (1s / 16Mhz * 20)
     let mut pwm = SequencePwm::new_1ch(p_pwm, p, config).unwrap();
 
-    loop {
-        //BOTTOM_LEDS_CHANNEL.receive().await.execute(&mut pwm).await;
-    }
+    //loop {
+    //    //BOTTOM_LEDS_CHANNEL.receive().await.execute(&mut pwm).await;
+    //}
     // Declare the bits of 24 bits in a buffer we'll be
     // mutating later.
     // GRB
@@ -130,7 +145,7 @@ pub async fn bottom_leds(p_pwm: PWM0, p: P0_11) {
 }
 
 #[embassy_executor::task]
-pub async fn servo(p_pwm1: PWM1, p: P0_01) {
+pub async fn servo(p_pwm1: Peri<'static, PWM1>, p: Peri<'static, P0_01>) {
     let mut pwm = SimplePwm::new_1ch(p_pwm1, p);
     pwm.set_prescaler(Prescaler::Div128);
     pwm.set_max_duty(2500);
@@ -167,7 +182,7 @@ pub async fn motors() {
 }
 
 #[embassy_executor::task]
-pub async fn ir_remote_control(p: P0_02) {
+pub async fn ir_remote_control(p: Peri<'static, P0_02>) {
     let mut ir_pin = Input::new(p, Pull::Up);
     let mut controller = IrRemoteController;
     debug!("IR Remote Control initialized");

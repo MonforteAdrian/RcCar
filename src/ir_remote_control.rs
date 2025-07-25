@@ -1,10 +1,8 @@
-use defmt::debug;
-use embassy_executor::Spawner;
-
 use crate::{
     big_led::{BIG_LEDS_CHANNEL, BigLedCommand},
-    motor::{MOTORS_CHANNEL, Motor, MotorCommand},
+    motor::{MOTORS_CHANNEL, MotorCommand},
 };
+use defmt::debug;
 
 pub enum IrButton {
     Ok,
