@@ -1,5 +1,0 @@
-cargo:rustc-link-search=/home/adrian/rust_projects/rc/target/thumbv7em-none-eabihf/debug/build/rc-442b40c1d1065f7c/out
-cargo:rerun-if-changed=memory.x
-cargo:rustc-link-arg-bins=--nmagic
-cargo:rustc-link-arg-bins=-Tlink.x
-cargo:rustc-link-arg-bins=-Tdefmt.x
