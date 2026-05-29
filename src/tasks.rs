@@ -1,9 +1,9 @@
 use crate::{
     big_led::{BIG_LEDS_CHANNEL, BigLed, BigLedCommand},
-    bottom_led::BOTTOM_LEDS_CHANNEL,
-    ir_remote_control::{IrButton, IrDecodeResult, IrRemoteController, decode_nec},
-    motor::{MOTORS_CHANNEL, Motor, MotorPower},
-    servo::ServoDirection,
+    bottom_led::{BOTTOM_LEDS_CHANNEL, BottomLedCommand},
+    ir_remote_control::{IrDecodeResult, IrRemoteController, decode_nec},
+    motor::MOTORS_CHANNEL,
+    servo::{SERVO_CHANNEL, ServoCommand, ServoDirection, position_to_duty},
     twim::{Irqs, TWIN_CHANNEL},
 };
 use defmt::debug;
@@ -34,10 +34,14 @@ const SAMPLE_INTERVAL_US: u64 = 15;
 pub async fn twin_task(p_twin: TWISPI0, p_i2c_ext_sda: P1_00, p_i2c_ext_scl: P0_26) {
     let config = embassy_nrf::twim::Config::default();
     let mut twi = Twim::new(p_twin, Irqs, p_i2c_ext_sda, p_i2c_ext_scl, config);
+    debug!("TWIM initialized");
 
     loop {
         let command = TWIN_CHANNEL.receive().await;
-        let _ = twi.blocking_write(0x30, &mut [command.channel(), command.value()]);
+        let buffer = [command.channel(), command.value()];
+        if twi.blocking_write(0x30, &buffer).is_err() {
+            debug!("I2C write failed channel={} value={}", buffer[0], buffer[1]);
+        }
     }
 }
 
@@ -62,70 +66,44 @@ pub async fn big_leds() {
 #[embassy_executor::task]
 pub async fn bottom_leds(p_pwm: PWM0, p: P0_11) {
     debug!("Bottom LEDs initialized");
-    // Use the smart-leds crate to better integration
     let mut config = embassy_nrf::pwm::Config::default();
     config.sequence_load = SequenceLoad::Common;
     config.prescaler = Prescaler::Div1;
     config.max_duty = 20; // 1.25us (1s / 16Mhz * 20)
     let mut pwm = SequencePwm::new_1ch(p_pwm, p, config).unwrap();
 
-    loop {
-        //BOTTOM_LEDS_CHANNEL.receive().await.execute(&mut pwm).await;
-    }
-    // Declare the bits of 24 bits in a buffer we'll be
-    // mutating later.
-    // GRB
-    let mut seq_words = [
-        // seq_word[0-2] Front Left led
-        T0H, T0H, T0H, T0H, T0H, T0H, T0H, T0H, // 0
-        T0H, T0H, T0H, T0H, T0H, T0H, T0H, T0H, // 0
-        T1H, T1H, T1H, T1H, T1H, T1H, T1H, T1H, // 1
-        // seq_word[3-5] Front Right led
-        T0H, T0H, T0H, T0H, T0H, T0H, T0H, T0H, // 0
-        T0H, T0H, T0H, T0H, T0H, T0H, T0H, T0H, // 0
-        T1H, T1H, T1H, T1H, T1H, T1H, T1H, T1H, // 1
-        // seq_word[6-8] Back Righ led
-        T0H, T0H, T0H, T0H, T0H, T0H, T0H, T0H, // 0
-        T0H, T0H, T0H, T0H, T0H, T0H, T0H, T0H, // 0
-        T1H, T1H, T1H, T1H, T1H, T1H, T1H, T1H, // 1
-        // seq_word[9-11] Back Left led
-        T0H, T0H, T0H, T0H, T0H, T0H, T0H, T0H, // 0
-        T0H, T0H, T0H, T0H, T0H, T0H, T0H, T0H, // 0
-        T1H, T1H, T1H, T1H, T1H, T1H, T1H, T1H, // 1
-        RES,
-    ];
-
+    let mut seq_words = [RES; 97];
     let mut seq_config = SequenceConfig::default();
     seq_config.end_delay = 799; // 50us (20 ticks * 40) - 1 tick because we've already got one RES;
 
-    let mut color_bit = 16;
-    let mut bit_value = T0H;
-
     loop {
+        match BOTTOM_LEDS_CHANNEL.receive().await {
+            BottomLedCommand::AllOff => encode_bottom_leds(&mut seq_words, 0x00, 0x00, 0x00),
+            BottomLedCommand::AllOn => encode_bottom_leds(&mut seq_words, 0x10, 0x00, 0x00),
+        }
+
         let sequences = SingleSequencer::new(&mut pwm, &seq_words, seq_config.clone());
-        sequences.start(SingleSequenceMode::Times(1)).unwrap();
-
-        Timer::after_millis(1000).await;
-
-        if bit_value == T0H {
-            if color_bit == 20 {
-                bit_value = T1H;
-            } else {
-                color_bit += 1;
-            }
-        } else {
-            if color_bit == 16 {
-                bit_value = T0H;
-            } else {
-                color_bit -= 1;
-            }
+        if sequences.start(SingleSequenceMode::Times(1)).is_err() {
+            debug!("Bottom LED sequence failed");
         }
 
-        drop(sequences);
+        Timer::after_millis(1).await;
+    }
+}
 
-        for i in 0..4 {
-            seq_words[color_bit + (i * 24)] = bit_value;
-        }
+fn encode_bottom_leds(seq_words: &mut [u16; 97], g: u8, r: u8, b: u8) {
+    for led in 0..4 {
+        let base = led * 24;
+        encode_byte(g, &mut seq_words[base..base + 8]);
+        encode_byte(r, &mut seq_words[base + 8..base + 16]);
+        encode_byte(b, &mut seq_words[base + 16..base + 24]);
+    }
+    seq_words[96] = RES;
+}
+
+fn encode_byte(byte: u8, words: &mut [u16]) {
+    for (bit, word) in words.iter_mut().enumerate() {
+        *word = if (byte << bit) & 0x80 != 0 { T1H } else { T0H };
     }
 }
 
@@ -134,35 +112,26 @@ pub async fn servo(p_pwm1: PWM1, p: P0_01) {
     let mut pwm = SimplePwm::new_1ch(p_pwm1, p);
     pwm.set_prescaler(Prescaler::Div128);
     pwm.set_max_duty(2500);
+    pwm.set_duty(0, ServoDirection::Front.direction_to_duty());
     debug!("Servo initialized");
 
     loop {
-        debug!("Servo Left");
-        pwm.set_duty(0, ServoDirection::Left.direction_to_duty());
-        Timer::after(Duration::from_millis(5000)).await;
-
-        debug!("Servo Left Front");
-        pwm.set_duty(0, ServoDirection::LeftFront.direction_to_duty());
-        Timer::after_millis(5000).await;
-
-        debug!("Servo Front");
-        pwm.set_duty(0, ServoDirection::Front.direction_to_duty());
-        Timer::after_millis(5000).await;
-
-        debug!("Servo Right Front");
-        pwm.set_duty(0, ServoDirection::RightFront.direction_to_duty());
-        Timer::after_millis(5000).await;
-
-        debug!("Servo Right");
-        pwm.set_duty(0, ServoDirection::Right.direction_to_duty());
-        Timer::after(Duration::from_millis(5000)).await;
+        match SERVO_CHANNEL.receive().await {
+            ServoCommand::SetDirection(direction) => {
+                pwm.set_duty(0, direction.direction_to_duty());
+            }
+            ServoCommand::SetPosition(position) => {
+                pwm.set_duty(0, position_to_duty(position));
+            }
+        }
     }
 }
 
 #[embassy_executor::task]
 pub async fn motors() {
     loop {
-        MOTORS_CHANNEL.receive().await.execute().await;
+        let command = MOTORS_CHANNEL.receive().await;
+        command.execute().await;
     }
 }
 

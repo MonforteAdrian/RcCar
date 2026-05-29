@@ -1,0 +1,23 @@
+[Unit]
+Description=RcCar BLE controller service
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+Type=simple
+User=rc-car
+Group=rc-car
+SupplementaryGroups=bluetooth
+RuntimeDirectory=rc-ble-controller
+RuntimeDirectoryMode=0750
+UMask=0007
+ExecStart=/usr/local/bin/rc-ble-controller --service --socket /run/rc-ble-controller/rc-ble-controller.sock --auto-stop-seconds 3
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

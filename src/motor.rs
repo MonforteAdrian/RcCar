@@ -1,15 +1,18 @@
 use crate::twim::{TWIN_CHANNEL, TwinCommand};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::Channel};
-use embassy_time::{Duration, Instant, Timer};
 
 pub static MOTORS_CHANNEL: Channel<ThreadModeRawMutex, MotorCommand, 1> = Channel::new();
+const ANALOG_MOTOR_DEADBAND_PERCENT: i8 = 15;
 
+#[derive(Clone, Copy)]
 pub enum MotorCommand {
     Stop,
     Forward,
     Backward,
     Left,
     Right,
+    Throttle(i8),
+    Drive { throttle: i8, steering: i8 },
 }
 
 impl MotorCommand {
@@ -46,8 +49,43 @@ impl MotorCommand {
                     motor.set_power(MotorPower::Backward(0xFF)).await;
                 }
             }
+            MotorCommand::Throttle(throttle) => {
+                let power = motor_power_from_throttle(*throttle);
+                for mut motor in Motor::all_motors().into_iter() {
+                    motor.set_power(power).await;
+                }
+            }
+            MotorCommand::Drive { throttle, steering } => {
+                let left_power = motor_power_from_throttle(mix_percent(*throttle, *steering));
+                let right_power = motor_power_from_throttle(mix_percent(*throttle, -*steering));
+                for mut motor in Motor::left_side_motors().into_iter() {
+                    motor.set_power(left_power).await;
+                }
+                for mut motor in Motor::right_side_motors().into_iter() {
+                    motor.set_power(right_power).await;
+                }
+            }
         }
     }
+}
+
+fn mix_percent(throttle: i8, steering: i8) -> i8 {
+    (throttle as i16 + steering as i16).clamp(-100, 100) as i8
+}
+
+fn motor_power_from_throttle(throttle: i8) -> MotorPower {
+    let throttle = throttle.clamp(-100, 100);
+    if throttle.abs() <= ANALOG_MOTOR_DEADBAND_PERCENT {
+        MotorPower::Stop
+    } else if throttle > 0 {
+        MotorPower::Forward(percent_to_pwm(throttle as u8))
+    } else {
+        MotorPower::Backward(percent_to_pwm((-throttle) as u8))
+    }
+}
+
+fn percent_to_pwm(percent: u8) -> u8 {
+    ((percent as u16 * u8::MAX as u16) / 100) as u8
 }
 
 #[derive(Clone, Copy)]
@@ -65,8 +103,8 @@ enum MotorPosition {
 #[derive(Clone, Copy)]
 pub enum MotorPower {
     Stop,
-    Forward(u8),  // speed 0-100
-    Backward(u8), // speed 0-100
+    Forward(u8),
+    Backward(u8),
 }
 
 pub struct Motor {

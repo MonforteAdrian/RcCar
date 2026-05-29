@@ -1,8 +1,13 @@
 #![no_std]
 #![no_main]
 
+use defmt::info;
+use defmt_rtt as _;
 use embassy_executor::Spawner;
+use embassy_nrf::{config::Config, interrupt::Priority};
+use panic_probe as _;
 
+mod bluetooth;
 mod tasks;
 use tasks::*;
 mod big_led;
@@ -15,7 +20,15 @@ mod twim;
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     info!("Starting...");
-    let p = embassy_nrf::init(Default::default());
+    let mut config = Config::default();
+    config.gpiote_interrupt_priority = Priority::P2;
+    config.time_interrupt_priority = Priority::P2;
+    let p = embassy_nrf::init(config);
+
+    let (sd, server) = bluetooth::enable_softdevice();
+    let sd = &*sd;
+    spawner.must_spawn(bluetooth::softdevice_task(sd));
+    spawner.must_spawn(bluetooth::bluetooth_task(sd, server));
 
     // Communication for Big Leds and Motors
     spawner.must_spawn(twin_task(p.TWISPI0, p.P1_00, p.P0_26));
@@ -39,8 +52,6 @@ async fn main(spawner: Spawner) {
     // TODO Line tracking sensor
 
     // TODO Ultrasonic sensor
-
-    // TODO Bluetooth remote controller
 
     // TODO Extra projects from the microbit sensors?
 }

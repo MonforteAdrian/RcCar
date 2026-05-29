@@ -31,11 +31,18 @@ defmt-rtt = "0.4"
 
 cortex-m = { version = "0.7.6", features = [
     "inline-asm",
-    "critical-section-single-core",
 ] }
 cortex-m-rt = "0.7.0"
 
 panic-probe = { version = "0.3", features = ["print-defmt"] }
+nrf-softdevice = { version = "0.1.0", features = [
+    "defmt",
+    "nrf52833",
+    "s140",
+    "ble-peripheral",
+    "ble-gatt-server",
+    "critical-section-impl",
+] }
 
 [profile.release]
 debug = 2
